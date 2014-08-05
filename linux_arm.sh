@@ -80,6 +80,7 @@ function build_ARMv6
     --disable-shared \
     --enable-static \
     --enable-zlib \
+    --enable-pic \
     --disable-everything \
     ${MODULES} \
     ${VIDEO_DECODERS} \
@@ -104,6 +105,7 @@ function build_ARMv7
     --disable-shared \
     --enable-static \
     --enable-zlib \
+    --enable-pic \
     --disable-everything \
     ${MODULES} \
     ${VIDEO_DECODERS} \
