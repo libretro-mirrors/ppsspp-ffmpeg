@@ -75,6 +75,7 @@ MUXERS="\
     --enable-static \
     --extra-ldflags="-arch armv7 -isysroot $PLATFORM/SDKs/iPhoneOS6.1.sdk -miphoneos-version-min=6.0" \
     --enable-zlib \
+    --enable-pic \
     --disable-everything \
     ${MODULES} \
     ${VIDEO_DECODERS} \
@@ -106,6 +107,7 @@ fi
     --enable-static \
     --extra-ldflags="-arch armv7s -isysroot $PLATFORM/SDKs/iPhoneOS6.1.sdk -miphoneos-version-min=6.0" \
     --enable-zlib \
+    --enable-pic \
     --disable-everything \
     ${MODULES} \
     ${VIDEO_DECODERS} \
