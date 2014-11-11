@@ -5,7 +5,7 @@ PLATFORM=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/
 GENERAL="\
    --enable-cross-compile \
    --arch=arm \
-   --cc=clang"
+   --cc=$PLATFORM/usr/bin/gcc"
 
 MODULES="\
    --disable-filters \
@@ -69,11 +69,11 @@ MUXERS="\
 ./configure \
     --prefix=ios/armv7 \
     $GENERAL \
-    --sysroot="$(xcrun -sdk iphoneos -show-sdk-path)" \
-    --extra-cflags="-arch armv7 -mfpu=neon -miphoneos-version-min=5.0" \
+    --sysroot="$PLATFORM/SDKs/iPhoneOS6.1.sdk" \
+    --extra-cflags="-arch armv7 -mfpu=neon -miphoneos-version-min=6.0" \
     --disable-shared \
     --enable-static \
-    --extra-ldflags="-arch armv7 -isysroot $(xcrun -sdk iphoneos -show-sdk-path) -miphoneos-version-min=5.0" \
+    --extra-ldflags="-arch armv7 -isysroot $PLATFORM/SDKs/iPhoneOS6.1.sdk -miphoneos-version-min=6.0" \
     --enable-zlib \
     --enable-pic \
     --disable-everything \
@@ -83,7 +83,7 @@ MUXERS="\
     ${VIDEO_ENCODERS} \
     ${AUDIO_ENCODERS} \
     ${DEMUXERS} \
-    ${MUXERS} \
+		${MUXERS} \
     ${PARSERS} \
     --target-os=darwin \
     --enable-vfp \
@@ -101,11 +101,11 @@ fi
 ./configure \
     --prefix=ios/armv7s \
     $GENERAL \
-    --sysroot="$(xcrun -sdk iphoneos -show-sdk-path)" \
-    --extra-cflags="-arch armv7s -mfpu=neon -miphoneos-version-min=5.0" \
+    --sysroot="$PLATFORM/SDKs/iPhoneOS6.1.sdk" \
+    --extra-cflags="-arch armv7s -mfpu=neon -miphoneos-version-min=6.0" \
     --disable-shared \
     --enable-static \
-    --extra-ldflags="-arch armv7s -isysroot $(xcrun -sdk iphoneos -show-sdk-path)" -miphoneos-version-min=5.0" \
+    --extra-ldflags="-arch armv7s -isysroot $PLATFORM/SDKs/iPhoneOS6.1.sdk -miphoneos-version-min=6.0" \
     --enable-zlib \
     --enable-pic \
     --disable-everything \
