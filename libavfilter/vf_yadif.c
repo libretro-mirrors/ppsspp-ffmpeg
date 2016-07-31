@@ -1,20 +1,22 @@
 /*
  * Copyright (C) 2006-2011 Michael Niedermayer <michaelni@gmx.at>
  *               2010      James Darnley <james.darnley@gmail.com>
+
+ * This file is part of FFmpeg.
  *
- * FFmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/avassert.h"
@@ -23,14 +25,11 @@
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/imgutils.h"
-#include "libavutil/x86/asm.h"
-#include "libavutil/x86/cpu.h"
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
 #include "yadif.h"
-
 
 typedef struct ThreadData {
     AVFrame *frame;
@@ -40,42 +39,13 @@ typedef struct ThreadData {
     int tff;
 } ThreadData;
 
-typedef struct YADIFContext {
-    const AVClass *class;
-
-    enum YADIFMode   mode;
-    enum YADIFParity parity;
-    enum YADIFDeint  deint;
-
-    int frame_pending;
-
-    AVFrame *cur;
-    AVFrame *next;
-    AVFrame *prev;
-    AVFrame *out;
-
-    /**
-     * Required alignment for filter_line
-     */
-    void (*filter_line)(void *dst,
-                        void *prev, void *cur, void *next,
-                        int w, int prefs, int mrefs, int parity, int mode);
-    void (*filter_edges)(void *dst, void *prev, void *cur, void *next,
-                         int w, int prefs, int mrefs, int parity, int mode);
-
-    const AVPixFmtDescriptor *csp;
-    int eof;
-    uint8_t *temp_line;
-    int temp_line_size;
-} YADIFContext;
-
 #define CHECK(j)\
-    {   int score = FFABS(cur[mrefs - 1 + j] - cur[prefs - 1 - j])\
-                  + FFABS(cur[mrefs     + j] - cur[prefs     - j])\
-                  + FFABS(cur[mrefs + 1 + j] - cur[prefs + 1 - j]);\
+    {   int score = FFABS(cur[mrefs - 1 + (j)] - cur[prefs - 1 - (j)])\
+                  + FFABS(cur[mrefs  +(j)] - cur[prefs  -(j)])\
+                  + FFABS(cur[mrefs + 1 + (j)] - cur[prefs + 1 - (j)]);\
         if (score < spatial_score) {\
             spatial_score= score;\
-            spatial_pred= (cur[mrefs    + j] + cur[prefs     - j])>>1;\
+            spatial_pred= (cur[mrefs  +(j)] + cur[prefs  -(j)])>>1;\
 
 /* The is_not_edge argument here controls when the code will enter a branch
  * which reads up to and including x-3 and x+3. */
@@ -218,7 +188,7 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
     YADIFContext *s = ctx->priv;
     ThreadData *td  = arg;
     int refs = s->cur->linesize[td->plane];
-    int df = (s->csp->comp[td->plane].depth_minus1 + 8) / 8;
+    int df = (s->csp->comp[td->plane].depth + 7) / 8;
     int pix_3 = 3 * df;
     int slice_start = (td->h *  jobnr   ) / nb_jobs;
     int slice_end   = (td->h * (jobnr+1)) / nb_jobs;
@@ -263,8 +233,8 @@ static void filter(AVFilterContext *ctx, AVFrame *dstpic,
         int h = dstpic->height;
 
         if (i == 1 || i == 2) {
-            w = FF_CEIL_RSHIFT(w, yadif->csp->log2_chroma_w);
-            h = FF_CEIL_RSHIFT(h, yadif->csp->log2_chroma_h);
+            w = AV_CEIL_RSHIFT(w, yadif->csp->log2_chroma_w);
+            h = AV_CEIL_RSHIFT(h, yadif->csp->log2_chroma_h);
         }
 
 
@@ -357,8 +327,9 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
     yadif->cur  = yadif->next;
     yadif->next = frame;
 
-    if (!yadif->cur)
-        return 0;
+    if (!yadif->cur &&
+        !(yadif->cur = av_frame_clone(yadif->next)))
+        return AVERROR(ENOMEM);
 
     if (checkstride(yadif, yadif->next, yadif->cur)) {
         av_log(ctx, AV_LOG_VERBOSE, "Reallocating frame due to differing stride\n");
@@ -373,7 +344,14 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
         return -1;
     }
 
-    if ((yadif->deint && !yadif->cur->interlaced_frame) || ctx->is_disabled) {
+    if (!yadif->prev)
+        return 0;
+
+    if ((yadif->deint && !yadif->cur->interlaced_frame) ||
+        ctx->is_disabled ||
+        (yadif->deint && !yadif->prev->interlaced_frame && yadif->prev->repeat_pict) ||
+        (yadif->deint && !yadif->next->interlaced_frame && yadif->next->repeat_pict)
+    ) {
         yadif->out  = av_frame_clone(yadif->cur);
         if (!yadif->out)
             return AVERROR(ENOMEM);
@@ -383,10 +361,6 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
             yadif->out->pts *= 2;
         return ff_filter_frame(ctx->outputs[0], yadif->out);
     }
-
-    if (!yadif->prev &&
-        !(yadif->prev = av_frame_clone(yadif->cur)))
-        return AVERROR(ENOMEM);
 
     yadif->out = ff_get_video_buffer(ctx->outputs[0], link->w, link->h);
     if (!yadif->out)
@@ -405,34 +379,31 @@ static int request_frame(AVFilterLink *link)
 {
     AVFilterContext *ctx = link->src;
     YADIFContext *yadif = ctx->priv;
+    int ret;
 
     if (yadif->frame_pending) {
         return_frame(ctx, 1);
         return 0;
     }
 
-    do {
-        int ret;
+    if (yadif->eof)
+        return AVERROR_EOF;
 
-        if (yadif->eof)
-            return AVERROR_EOF;
+    ret  = ff_request_frame(ctx->inputs[0]);
 
-        ret  = ff_request_frame(link->src->inputs[0]);
+    if (ret == AVERROR_EOF && yadif->cur) {
+        AVFrame *next = av_frame_clone(yadif->next);
 
-        if (ret == AVERROR_EOF && yadif->cur) {
-            AVFrame *next = av_frame_clone(yadif->next);
+        if (!next)
+            return AVERROR(ENOMEM);
 
-            if (!next)
-                return AVERROR(ENOMEM);
+        next->pts = yadif->next->pts * 2 - yadif->cur->pts;
 
-            next->pts = yadif->next->pts * 2 - yadif->cur->pts;
-
-            filter_frame(link->src->inputs[0], next);
-            yadif->eof = 1;
-        } else if (ret < 0) {
-            return ret;
-        }
-    } while (!yadif->cur);
+        filter_frame(ctx->inputs[0], next);
+        yadif->eof = 1;
+    } else if (ret < 0) {
+        return ret;
+    }
 
     return 0;
 }
@@ -480,30 +451,34 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVA422P,
         AV_PIX_FMT_YUVA444P,
         AV_PIX_FMT_GBRP,
+        AV_PIX_FMT_GBRP9,
+        AV_PIX_FMT_GBRP10,
+        AV_PIX_FMT_GBRP12,
+        AV_PIX_FMT_GBRP14,
+        AV_PIX_FMT_GBRP16,
         AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_NONE
     };
 
-    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
-
-    return 0;
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_props(AVFilterLink *link)
 {
     AVFilterContext *ctx = link->src;
-    YADIFContext *s = link->src->priv;
-    int cpu_flags = av_get_cpu_flags();
-    int bit_depth = (!s->csp) ? 8
-                                  : s->csp->comp[0].depth_minus1 + 1;
+    YADIFContext *s = ctx->priv;
 
-    link->time_base.num = link->src->inputs[0]->time_base.num;
-    link->time_base.den = link->src->inputs[0]->time_base.den * 2;
-    link->w             = link->src->inputs[0]->w;
-    link->h             = link->src->inputs[0]->h;
+    link->time_base.num = ctx->inputs[0]->time_base.num;
+    link->time_base.den = ctx->inputs[0]->time_base.den * 2;
+    link->w             = ctx->inputs[0]->w;
+    link->h             = ctx->inputs[0]->h;
 
-    if(s->mode&1)
-        link->frame_rate = av_mul_q(link->src->inputs[0]->frame_rate, (AVRational){2,1});
+    if(s->mode & 1)
+        link->frame_rate = av_mul_q(ctx->inputs[0]->frame_rate,
+                                    (AVRational){2, 1});
 
     if (link->w < 3 || link->h < 3) {
         av_log(ctx, AV_LOG_ERROR, "Video of less than 3 columns or lines is not supported\n");
@@ -511,7 +486,7 @@ static int config_props(AVFilterLink *link)
     }
 
     s->csp = av_pix_fmt_desc_get(link->format);
-    if (s->csp->comp[0].depth_minus1 / 8 == 1) {
+    if (s->csp->comp[0].depth > 8) {
         s->filter_line  = filter_line_c_16bit;
         s->filter_edges = filter_edges_16bit;
     } else {
@@ -519,38 +494,9 @@ static int config_props(AVFilterLink *link)
         s->filter_edges = filter_edges;
     }
 
-#if HAVE_YASM
-    if (bit_depth >= 15) {
-        if (EXTERNAL_SSE4(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_16bit_sse4;
-        else if (EXTERNAL_SSSE3(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_16bit_ssse3;
-        else if (EXTERNAL_SSE2(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_16bit_sse2;
-#if ARCH_X86_32
-        else if (EXTERNAL_MMXEXT(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_16bit_mmxext;
-#endif /* ARCH_X86_32 */
-    } else if ( bit_depth >= 9 && bit_depth <= 14) {
-        if (EXTERNAL_SSSE3(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_10bit_ssse3;
-        else if (EXTERNAL_SSE2(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_10bit_sse2;
-#if ARCH_X86_32
-        else if (EXTERNAL_MMXEXT(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_10bit_mmxext;
-#endif /* ARCH_X86_32 */
-    } else {
-        if (EXTERNAL_SSSE3(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_ssse3;
-        else if (EXTERNAL_SSE2(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_sse2;
-#if ARCH_X86_32
-        else if (EXTERNAL_MMXEXT(cpu_flags))
-            s->filter_line = ff_yadif_filter_line_mmxext;
-#endif /* ARCH_X86_32 */
-    }
-#endif /* HAVE_YASM */
+    if (ARCH_X86)
+        ff_yadif_init_x86(s);
+
     return 0;
 }
 
@@ -581,6 +527,25 @@ static const AVOption yadif_options[] = {
 
 AVFILTER_DEFINE_CLASS(yadif);
 
+static const AVFilterPad avfilter_vf_yadif_inputs[] = {
+    {
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_VIDEO,
+        .filter_frame  = filter_frame,
+    },
+    { NULL }
+};
+
+static const AVFilterPad avfilter_vf_yadif_outputs[] = {
+    {
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_VIDEO,
+        .request_frame = request_frame,
+        .config_props  = config_props,
+    },
+    { NULL }
+};
+
 AVFilter ff_vf_yadif = {
     .name          = "yadif",
     .description   = NULL_IF_CONFIG_SMALL("Deinterlace the input image."),
@@ -588,19 +553,7 @@ AVFilter ff_vf_yadif = {
     .priv_class    = &yadif_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-
-    .inputs        = (const AVFilterPad[]) {{ .name             = "default",
-                                              .type             = AVMEDIA_TYPE_VIDEO,
-                                              .filter_frame     = filter_frame,
-                                            },
-                                            { .name = NULL}},
-
-    .outputs       = (const AVFilterPad[]) {{ .name             = "default",
-                                              .type             = AVMEDIA_TYPE_VIDEO,
-                                              .request_frame    = request_frame,
-                                              .config_props     = config_props,
-                                            },
-                                            { .name = NULL}},
-
+    .inputs        = avfilter_vf_yadif_inputs,
+    .outputs       = avfilter_vf_yadif_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
 };

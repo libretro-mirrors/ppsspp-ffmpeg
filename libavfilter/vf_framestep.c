@@ -28,7 +28,7 @@
 #include "internal.h"
 #include "video.h"
 
-typedef struct {
+typedef struct NullContext {
     const AVClass *class;
     int frame_step;
 } FrameStepContext;
@@ -49,7 +49,6 @@ static int config_output_props(AVFilterLink *outlink)
     FrameStepContext *framestep = ctx->priv;
     AVFilterLink *inlink = ctx->inputs[0];
 
-    outlink->flags |= FF_LINK_FLAG_REQUEST_LOOP;
     outlink->frame_rate =
         av_div_q(inlink->frame_rate, (AVRational){framestep->frame_step, 1});
 

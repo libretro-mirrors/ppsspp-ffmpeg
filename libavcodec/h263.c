@@ -34,12 +34,10 @@
 #include "h263.h"
 #include "h263data.h"
 #include "mathops.h"
+#include "mpegutils.h"
 #include "unary.h"
 #include "flv.h"
 #include "mpeg4video.h"
-
-
-uint8_t ff_h263_static_rl_table_store[2][2][2*MAX_RUN + MAX_LEVEL + 3];
 
 
 void ff_h263_update_motion_val(MpegEncContext * s){
@@ -266,7 +264,7 @@ void ff_h263_pred_acdc(MpegEncContext * s, int16_t *block, int n)
             if (a != 1024) {
                 ac_val -= 16;
                 for(i=1;i<8;i++) {
-                    block[s->dsp.idct_permutation[i<<3]] += ac_val[i];
+                    block[s->idsp.idct_permutation[i << 3]] += ac_val[i];
                 }
                 pred_dc = a;
             }
@@ -275,7 +273,7 @@ void ff_h263_pred_acdc(MpegEncContext * s, int16_t *block, int n)
             if (c != 1024) {
                 ac_val -= 16 * wrap;
                 for(i=1;i<8;i++) {
-                    block[s->dsp.idct_permutation[i   ]] += ac_val[i + 8];
+                    block[s->idsp.idct_permutation[i]] += ac_val[i + 8];
                 }
                 pred_dc = c;
             }
@@ -303,10 +301,10 @@ void ff_h263_pred_acdc(MpegEncContext * s, int16_t *block, int n)
 
     /* left copy */
     for(i=1;i<8;i++)
-        ac_val1[i    ] = block[s->dsp.idct_permutation[i<<3]];
+        ac_val1[i]     = block[s->idsp.idct_permutation[i << 3]];
     /* top copy */
     for(i=1;i<8;i++)
-        ac_val1[8 + i] = block[s->dsp.idct_permutation[i   ]];
+        ac_val1[8 + i] = block[s->idsp.idct_permutation[i]];
 }
 
 int16_t *ff_h263_pred_motion(MpegEncContext * s, int block, int dir,
@@ -365,17 +363,4 @@ int16_t *ff_h263_pred_motion(MpegEncContext * s, int block, int dir,
         *py = mid_pred(A[1], B[1], C[1]);
     }
     return *mot_val;
-}
-
-
-/**
- * Get the GOB height based on picture height.
- */
-int ff_h263_get_gob_height(MpegEncContext *s){
-    if (s->height <= 400)
-        return 1;
-    else if (s->height <= 800)
-        return  2;
-    else
-        return 4;
 }

@@ -1,6 +1,6 @@
 /*
  * id Quake II CIN File Demuxer
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -262,7 +262,7 @@ static int idcin_read_packet(AVFormatContext *s,
     unsigned char palette_buffer[768];
     uint32_t palette[256];
 
-    if (url_feof(s->pb))
+    if (avio_feof(s->pb))
         return s->pb->error ? s->pb->error : AVERROR_EOF;
 
     if (idcin->next_chunk_is_video) {
@@ -307,15 +307,13 @@ static int idcin_read_packet(AVFormatContext *s,
         }
         /* skip the number of decoded bytes (always equal to width * height) */
         avio_skip(pb, 4);
-        if (chunk_size < 4)
-            return AVERROR_INVALIDDATA;
         chunk_size -= 4;
         ret= av_get_packet(pb, pkt, chunk_size);
         if (ret < 0)
             return ret;
         else if (ret != chunk_size) {
             av_log(s, AV_LOG_ERROR, "incomplete packet\n");
-            av_free_packet(pkt);
+            av_packet_unref(pkt);
             return AVERROR(EIO);
         }
         if (command == 1) {
@@ -324,7 +322,7 @@ static int idcin_read_packet(AVFormatContext *s,
             pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE,
                                           AVPALETTE_SIZE);
             if (!pal) {
-                av_free_packet(pkt);
+                av_packet_unref(pkt);
                 return AVERROR(ENOMEM);
             }
             memcpy(pal, palette, AVPALETTE_SIZE);
@@ -359,7 +357,7 @@ static int idcin_read_seek(AVFormatContext *s, int stream_index,
     IdcinDemuxContext *idcin = s->priv_data;
 
     if (idcin->first_pkt_pos > 0) {
-        int ret = avio_seek(s->pb, idcin->first_pkt_pos, SEEK_SET);
+        int64_t ret = avio_seek(s->pb, idcin->first_pkt_pos, SEEK_SET);
         if (ret < 0)
             return ret;
         ff_update_cur_dts(s, s->streams[idcin->video_stream_index], 0);

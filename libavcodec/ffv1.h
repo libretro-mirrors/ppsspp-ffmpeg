@@ -35,7 +35,6 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/timer.h"
 #include "avcodec.h"
-#include "dsputil.h"
 #include "get_bits.h"
 #include "internal.h"
 #include "mathops.h"
@@ -54,7 +53,10 @@
 #define MAX_QUANT_TABLES 8
 #define MAX_CONTEXT_INPUTS 5
 
-extern const uint8_t ff_log2_run[41];
+#define AC_GOLOMB_RICE          0
+#define AC_RANGE_DEFAULT_TAB    1
+#define AC_RANGE_CUSTOM_TAB     2
+#define AC_RANGE_DEFAULT_TAB_FORCE -2
 
 typedef struct VlcState {
     int16_t drift;
@@ -90,6 +92,7 @@ typedef struct FFV1Context {
     int transparency;
     int flags;
     int picture_number;
+    int key_frame;
     ThreadFrame picture, last_picture;
     struct FFV1Context *fsrc;
 
@@ -111,6 +114,7 @@ typedef struct FFV1Context {
     int intra;
     int slice_damaged;
     int key_frame_ok;
+    int context_model;
 
     int bits_per_raw_sample;
     int packed_at_lsb;
@@ -118,10 +122,9 @@ typedef struct FFV1Context {
     int gob_count;
     int quant_table_count;
 
-    DSPContext dsp;
-
     struct FFV1Context *slice_context[MAX_SLICES];
     int slice_count;
+    int max_slice_count;
     int num_v_slices;
     int num_h_slices;
     int slice_width;
@@ -134,13 +137,13 @@ typedef struct FFV1Context {
     int slice_rct_ry_coef;
 } FFV1Context;
 
-int ffv1_common_init(AVCodecContext *avctx);
-int ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs);
-int ffv1_init_slices_state(FFV1Context *f);
-int ffv1_init_slice_contexts(FFV1Context *f);
-int ffv1_allocate_initial_states(FFV1Context *f);
-void ffv1_clear_slice_state(FFV1Context *f, FFV1Context *fs);
-int ffv1_close(AVCodecContext *avctx);
+int ff_ffv1_common_init(AVCodecContext *avctx);
+int ff_ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs);
+int ff_ffv1_init_slices_state(FFV1Context *f);
+int ff_ffv1_init_slice_contexts(FFV1Context *f);
+int ff_ffv1_allocate_initial_states(FFV1Context *f);
+void ff_ffv1_clear_slice_state(FFV1Context *f, FFV1Context *fs);
+int ff_ffv1_close(AVCodecContext *avctx);
 
 static av_always_inline int fold(int diff, int bits)
 {
@@ -148,7 +151,7 @@ static av_always_inline int fold(int diff, int bits)
         diff = (int8_t)diff;
     else {
         diff +=  1 << (bits  - 1);
-        diff &= (1 <<  bits) - 1;
+        diff  = av_mod_uintp2(diff, bits);
         diff -=  1 << (bits  - 1);
     }
 

@@ -22,6 +22,7 @@
 #include "libavcodec/internal.h"
 #include "avformat.h"
 #include "internal.h"
+#include "config.h"
 
 /* Enable function pointer definitions for runtime loading. */
 #define AVSC_NO_DECLSPEC
@@ -31,19 +32,15 @@
   #include <windows.h>
   #undef EXTERN_C
   #include "compat/avisynth/avisynth_c.h"
-  #include "compat/avisynth/avisynth_c_25.h"
   #define AVISYNTH_LIB "avisynth"
   #define USING_AVISYNTH
 #else
   #include <dlfcn.h>
   #include "compat/avisynth/avxsynth_c.h"
-    #if defined (__APPLE__)
-      #define AVISYNTH_LIB "libavxsynth.dylib"
-    #else
-      #define AVISYNTH_LIB "libavxsynth.so"
-    #endif
+  #define AVISYNTH_NAME "libavxsynth"
+  #define AVISYNTH_LIB AVISYNTH_NAME SLIBSUF
 
-  #define LoadLibrary(x) dlopen(x, RTLD_NOW | RTLD_GLOBAL)
+  #define LoadLibrary(x) dlopen(x, RTLD_NOW | RTLD_LOCAL)
   #define GetProcAddress dlsym
   #define FreeLibrary dlclose
 #endif
@@ -65,6 +62,17 @@ typedef struct AviSynthLibrary {
     AVSC_DECLARE_FUNC(avs_release_value);
     AVSC_DECLARE_FUNC(avs_release_video_frame);
     AVSC_DECLARE_FUNC(avs_take_clip);
+#ifdef USING_AVISYNTH
+    AVSC_DECLARE_FUNC(avs_bits_per_pixel);
+    AVSC_DECLARE_FUNC(avs_get_height_p);
+    AVSC_DECLARE_FUNC(avs_get_pitch_p);
+    AVSC_DECLARE_FUNC(avs_get_read_ptr_p);
+    AVSC_DECLARE_FUNC(avs_get_row_size_p);
+    AVSC_DECLARE_FUNC(avs_is_yv24);
+    AVSC_DECLARE_FUNC(avs_is_yv16);
+    AVSC_DECLARE_FUNC(avs_is_yv411);
+    AVSC_DECLARE_FUNC(avs_is_y8);
+#endif
 #undef AVSC_DECLARE_FUNC
 } AviSynthLibrary;
 
@@ -128,6 +136,17 @@ static av_cold int avisynth_load_library(void)
     LOAD_AVS_FUNC(avs_release_value, 0);
     LOAD_AVS_FUNC(avs_release_video_frame, 0);
     LOAD_AVS_FUNC(avs_take_clip, 0);
+#ifdef USING_AVISYNTH
+    LOAD_AVS_FUNC(avs_bits_per_pixel, 1);
+    LOAD_AVS_FUNC(avs_get_height_p, 1);
+    LOAD_AVS_FUNC(avs_get_pitch_p, 1);
+    LOAD_AVS_FUNC(avs_get_read_ptr_p, 1);
+    LOAD_AVS_FUNC(avs_get_row_size_p, 1);
+    LOAD_AVS_FUNC(avs_is_yv24, 1);
+    LOAD_AVS_FUNC(avs_is_yv16, 1);
+    LOAD_AVS_FUNC(avs_is_yv411, 1);
+    LOAD_AVS_FUNC(avs_is_y8, 1);
+#endif
 #undef LOAD_AVS_FUNC
 
     atexit(avisynth_atexit_handler);
@@ -218,13 +237,12 @@ static int avisynth_create_stream_video(AVFormatContext *s, AVStream *st)
     st->codec->width      = avs->vi->width;
     st->codec->height     = avs->vi->height;
 
-    st->time_base         = (AVRational) { avs->vi->fps_denominator,
-                                           avs->vi->fps_numerator };
     st->avg_frame_rate    = (AVRational) { avs->vi->fps_numerator,
                                            avs->vi->fps_denominator };
     st->start_time        = 0;
     st->duration          = avs->vi->num_frames;
     st->nb_frames         = avs->vi->num_frames;
+    avpriv_set_pts_info(st, 32, avs->vi->fps_denominator, avs->vi->fps_numerator);
 
     switch (avs->vi->pixel_type) {
 #ifdef USING_AVISYNTH
@@ -292,8 +310,8 @@ static int avisynth_create_stream_audio(AVFormatContext *s, AVStream *st)
     st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate = avs->vi->audio_samples_per_second;
     st->codec->channels    = avs->vi->nchannels;
-    st->time_base          = (AVRational) { 1,
-                                            avs->vi->audio_samples_per_second };
+    st->duration           = avs->vi->num_audio_samples;
+    avpriv_set_pts_info(st, 64, 1, avs->vi->audio_samples_per_second);
 
     switch (avs->vi->sample_type) {
     case AVS_SAMPLE_INT8:
@@ -383,6 +401,20 @@ static int avisynth_open_file(AVFormatContext *s)
     avs->clip = avs_library.avs_take_clip(val, avs->env);
     avs->vi   = avs_library.avs_get_video_info(avs->clip);
 
+#ifdef USING_AVISYNTH
+    /* On Windows, FFmpeg supports AviSynth interface version 6 or higher.
+     * This includes AviSynth 2.6 RC1 or higher, and AviSynth+ r1718 or higher,
+     * and excludes 2.5 and the 2.6 alphas. Since AvxSynth identifies itself
+     * as interface version 3 like 2.5.8, this needs to be special-cased. */
+
+    if (avs_library.avs_get_version(avs->clip) < 6) {
+        av_log(s, AV_LOG_ERROR,
+               "AviSynth version is too old. Please upgrade to either AviSynth 2.6 >= RC1 or AviSynth+ >= r1718.\n");
+        ret = AVERROR_UNKNOWN;
+        goto fail;
+    }
+#endif
+
     /* Release the AVS_Value as it will go out of scope. */
     avs_library.avs_release_value(val);
 
@@ -401,10 +433,10 @@ static void avisynth_next_stream(AVFormatContext *s, AVStream **st,
 {
     AviSynthContext *avs = s->priv_data;
 
-    pkt->stream_index = avs->curr_stream++;
+    avs->curr_stream++;
     avs->curr_stream %= s->nb_streams;
 
-    *st = s->streams[pkt->stream_index];
+    *st = s->streams[avs->curr_stream];
     if ((*st)->discard == AVDISCARD_ALL)
         *discard = 1;
     else
@@ -432,26 +464,24 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
     if (discard)
         return 0;
 
-    pkt->pts      = n;
-    pkt->dts      = n;
-    pkt->duration = 1;
-
 #ifdef USING_AVISYNTH
     /* Define the bpp values for the new AviSynth 2.6 colorspaces.
      * Since AvxSynth doesn't have these functions, special-case
      * it in order to avoid implicit declaration errors. */
 
-    if (avs_is_yv24(avs->vi))
+    if (avs_library.avs_is_yv24(avs->vi))
         bits = 24;
-    else if (avs_is_yv16(avs->vi))
+    else if (avs_library.avs_is_yv16(avs->vi))
         bits = 16;
-    else if (avs_is_yv411(avs->vi))
+    else if (avs_library.avs_is_yv411(avs->vi))
         bits = 12;
-    else if (avs_is_y8(avs->vi))
+    else if (avs_library.avs_is_y8(avs->vi))
         bits = 8;
     else
+        bits = avs_library.avs_bits_per_pixel(avs->vi);
+#else
+    bits = avs_bits_per_pixel(avs->vi);
 #endif
-        bits = avs_bits_per_pixel(avs->vi);
 
     /* Without the cast to int64_t, calculation overflows at about 9k x 9k
      * resolution. */
@@ -459,35 +489,37 @@ static int avisynth_read_packet_video(AVFormatContext *s, AVPacket *pkt,
                   (int64_t)avs->vi->height) * bits) / 8;
     if (!pkt->size)
         return AVERROR_UNKNOWN;
-    if (av_new_packet(pkt, (int)pkt->size) < 0) {
-        av_free(pkt);
+
+    if (av_new_packet(pkt, pkt->size) < 0)
         return AVERROR(ENOMEM);
-    }
+
+    pkt->pts      = n;
+    pkt->dts      = n;
+    pkt->duration = 1;
+    pkt->stream_index = avs->curr_stream;
 
     frame = avs_library.avs_get_frame(avs->clip, n);
     error = avs_library.avs_clip_get_error(avs->clip);
     if (error) {
         av_log(s, AV_LOG_ERROR, "%s\n", error);
         avs->error = 1;
-        av_freep(&pkt->data);
+        av_packet_unref(pkt);
         return AVERROR_UNKNOWN;
     }
 
     dst_p = pkt->data;
     for (i = 0; i < avs->n_planes; i++) {
         plane = avs->planes[i];
+#ifdef USING_AVISYNTH
+        src_p = avs_library.avs_get_read_ptr_p(frame, plane);
+        pitch = avs_library.avs_get_pitch_p(frame, plane);
+
+        rowsize     = avs_library.avs_get_row_size_p(frame, plane);
+        planeheight = avs_library.avs_get_height_p(frame, plane);
+#else
         src_p = avs_get_read_ptr_p(frame, plane);
         pitch = avs_get_pitch_p(frame, plane);
 
-#ifdef USING_AVISYNTH
-        if (avs_library.avs_get_version(avs->clip) == 3) {
-            rowsize     = avs_get_row_size_p_25(frame, plane);
-            planeheight = avs_get_height_p_25(frame, plane);
-        } else {
-            rowsize     = avs_get_row_size_p(frame, plane);
-            planeheight = avs_get_height_p(frame, plane);
-        }
-#else
         rowsize     = avs_get_row_size_p(frame, plane);
         planeheight = avs_get_height_p(frame, plane);
 #endif
@@ -550,24 +582,25 @@ static int avisynth_read_packet_audio(AVFormatContext *s, AVPacket *pkt,
     if (discard)
         return 0;
 
-    pkt->pts      = n;
-    pkt->dts      = n;
-    pkt->duration = samples;
-
     pkt->size = avs_bytes_per_channel_sample(avs->vi) *
                 samples * avs->vi->nchannels;
     if (!pkt->size)
         return AVERROR_UNKNOWN;
-    pkt->data = av_malloc(pkt->size);
-    if (!pkt->data)
+
+    if (av_new_packet(pkt, pkt->size) < 0)
         return AVERROR(ENOMEM);
+
+    pkt->pts      = n;
+    pkt->dts      = n;
+    pkt->duration = samples;
+    pkt->stream_index = avs->curr_stream;
 
     avs_library.avs_get_audio(avs->clip, pkt->data, n, samples);
     error = avs_library.avs_clip_get_error(avs->clip);
     if (error) {
         av_log(s, AV_LOG_ERROR, "%s\n", error);
         avs->error = 1;
-        av_freep(&pkt->data);
+        av_packet_unref(pkt);
         return AVERROR_UNKNOWN;
     }
     return 0;
@@ -599,8 +632,6 @@ static int avisynth_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (avs->error)
         return AVERROR_UNKNOWN;
-
-    av_free_packet(pkt);
 
     /* If either stream reaches EOF, try to read the other one before
      * giving up. */

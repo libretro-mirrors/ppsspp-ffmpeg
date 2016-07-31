@@ -22,6 +22,7 @@
 #include "libavutil/time.h"
 #include "libavutil/log.h"
 #include "libavutil/opencl.h"
+#include "libavutil/avstring.h"
 #include "cmdutils.h"
 
 typedef struct {
@@ -181,12 +182,12 @@ static int64_t run_opencl_bench(AVOpenCLExternalEnv *ext_opencl_env)
     OCLCHECK(clSetKernelArg, kernel, arg++, sizeof(cl_int), &width);
     OCLCHECK(clSetKernelArg, kernel, arg++, sizeof(cl_int), &height);
 
-    start = av_gettime();
+    start = av_gettime_relative();
     for (i = 0; i < OPENCL_NB_ITER; i++)
         OCLCHECK(clEnqueueNDRangeKernel, ext_opencl_env->command_queue, kernel, 2, NULL,
                  global_work_size_2d, local_work_size_2d, 0, NULL, NULL);
     clFinish(ext_opencl_env->command_queue);
-    ret = (av_gettime() - start)/OPENCL_NB_ITER;
+    ret = (av_gettime_relative() - start)/OPENCL_NB_ITER;
 end:
     if (kernel)
         clReleaseKernel(kernel);
@@ -205,7 +206,9 @@ end:
 
 static int compare_ocl_device_desc(const void *a, const void *b)
 {
-    return ((OpenCLDeviceBenchmark*)a)->runtime - ((OpenCLDeviceBenchmark*)b)->runtime;
+    const OpenCLDeviceBenchmark* va = (const OpenCLDeviceBenchmark*)a;
+    const OpenCLDeviceBenchmark* vb = (const OpenCLDeviceBenchmark*)b;
+    return FFDIFFSIGN(va->runtime , vb->runtime);
 }
 
 int opt_opencl_bench(void *optctx, const char *opt, const char *arg)
@@ -224,7 +227,7 @@ int opt_opencl_bench(void *optctx, const char *opt, const char *arg)
         av_log(NULL, AV_LOG_ERROR, "No OpenCL device detected!\n");
         return AVERROR(EINVAL);
     }
-    if (!(devices = av_malloc(sizeof(OpenCLDeviceBenchmark) * nb_devices))) {
+    if (!(devices = av_malloc_array(nb_devices, sizeof(OpenCLDeviceBenchmark)))) {
         av_log(NULL, AV_LOG_ERROR, "Could not allocate buffer\n");
         return AVERROR(ENOMEM);
     }
@@ -238,7 +241,8 @@ int opt_opencl_bench(void *optctx, const char *opt, const char *arg)
                 devices[count].platform_idx = i;
                 devices[count].device_idx = j;
                 devices[count].runtime = score;
-                strcpy(devices[count].device_name, device_node->device_name);
+                av_strlcpy(devices[count].device_name, device_node->device_name,
+                           sizeof(devices[count].device_name));
                 count++;
             }
         }

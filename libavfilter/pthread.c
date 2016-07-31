@@ -27,18 +27,11 @@
 #include "libavutil/common.h"
 #include "libavutil/cpu.h"
 #include "libavutil/mem.h"
+#include "libavutil/thread.h"
 
 #include "avfilter.h"
 #include "internal.h"
 #include "thread.h"
-
-#if HAVE_PTHREADS
-#include <pthread.h>
-#elif HAVE_OS2THREADS
-#include "compat/os2threads.h"
-#elif HAVE_W32THREADS
-#include "compat/w32pthreads.h"
-#endif
 
 typedef struct ThreadContext {
     AVFilterGraph *graph;
@@ -47,7 +40,7 @@ typedef struct ThreadContext {
     pthread_t *workers;
     avfilter_action_func *func;
 
-    /* per-execute perameters */
+    /* per-execute parameters */
     AVFilterContext *ctx;
     void *arg;
     int   *rets;
@@ -170,7 +163,7 @@ static int thread_init_internal(ThreadContext *c, int nb_threads)
         return 1;
 
     c->nb_threads = nb_threads;
-    c->workers = av_mallocz(sizeof(*c->workers) * nb_threads);
+    c->workers = av_mallocz_array(sizeof(*c->workers), nb_threads);
     if (!c->workers)
         return AVERROR(ENOMEM);
 

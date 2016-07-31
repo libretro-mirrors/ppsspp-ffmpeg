@@ -20,6 +20,7 @@
  */
 
 #include "avformat.h"
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
 #include "network.h"
@@ -84,8 +85,9 @@ static int sap_read_header(AVFormatContext *s)
 
     ff_url_join(url, sizeof(url), "udp", NULL, host, port, "?localport=%d",
                 port);
-    ret = ffurl_open(&sap->ann_fd, url, AVIO_FLAG_READ,
-                     &s->interrupt_callback, NULL);
+    ret = ffurl_open_whitelist(&sap->ann_fd, url, AVIO_FLAG_READ,
+                               &s->interrupt_callback, NULL,
+                               s->protocol_whitelist);
     if (ret)
         goto fail;
 
@@ -158,6 +160,10 @@ static int sap_read_header(AVFormatContext *s)
     sap->sdp_ctx->max_delay = s->max_delay;
     sap->sdp_ctx->pb        = &sap->sdp_pb;
     sap->sdp_ctx->interrupt_callback = s->interrupt_callback;
+
+    if ((ret = ff_copy_whitelists(sap->sdp_ctx, s)) < 0)
+        goto fail;
+
     ret = avformat_open_input(&sap->sdp_ctx, "temp.sdp", infmt, NULL);
     if (ret < 0)
         goto fail;
@@ -215,7 +221,7 @@ static int sap_fetch_packet(AVFormatContext *s, AVPacket *pkt)
             int i = s->nb_streams;
             AVStream *st = avformat_new_stream(s, NULL);
             if (!st) {
-                av_free_packet(pkt);
+                av_packet_unref(pkt);
                 return AVERROR(ENOMEM);
             }
             st->id = i;

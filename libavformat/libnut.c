@@ -70,7 +70,7 @@ static int nut_write_header(AVFormatContext * avf) {
     nut_stream_header_tt * s;
     int i;
 
-    priv->s = s = av_mallocz((avf->nb_streams + 1) * sizeof*s);
+    priv->s = s = av_mallocz_array(avf->nb_streams + 1, sizeof*s);
     if(!s)
         return AVERROR(ENOMEM);
 
@@ -179,7 +179,7 @@ static size_t av_read(void * h, size_t len, uint8_t * buf) {
     return avio_read(bc, buf, len);
 }
 
-static off_t av_seek(void * h, long long pos, int whence) {
+static off_t av_seek(void * h, int64_t pos, int whence) {
     AVIOContext * bc = h;
     if (whence == SEEK_END) {
         pos = avio_size(bc) + pos;

@@ -27,6 +27,7 @@
 #include <SDL_thread.h>
 
 #include "libavutil/avstring.h"
+#include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
@@ -71,12 +72,16 @@ static int sdl_write_trailer(AVFormatContext *s)
 
     if (sdl->overlay)
         SDL_FreeYUVOverlay(sdl->overlay);
+    sdl->overlay = NULL;
     if (sdl->event_thread)
         SDL_WaitThread(sdl->event_thread, NULL);
+    sdl->event_thread = NULL;
     if (sdl->mutex)
         SDL_DestroyMutex(sdl->mutex);
+    sdl->mutex = NULL;
     if (sdl->init_cond)
         SDL_DestroyCond(sdl->init_cond);
+    sdl->init_cond = NULL;
 
     if (!sdl->sdl_was_already_inited)
         SDL_Quit();
@@ -292,7 +297,7 @@ static int sdl_write_header(AVFormatContext *s)
 
     /* wait until the video system has been inited */
     SDL_LockMutex(sdl->mutex);
-    if (!sdl->inited) {
+    while (!sdl->inited) {
         SDL_CondWait(sdl->init_cond, sdl->mutex);
     }
     SDL_UnlockMutex(sdl->mutex);
@@ -311,22 +316,23 @@ static int sdl_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SDLContext *sdl = s->priv_data;
     AVCodecContext *encctx = s->streams[0]->codec;
-    AVPicture pict;
+    uint8_t *data[4];
+    int linesize[4];
     int i;
 
     if (sdl->quit) {
         sdl_write_trailer(s);
         return AVERROR(EIO);
     }
-    avpicture_fill(&pict, pkt->data, encctx->pix_fmt, encctx->width, encctx->height);
+    av_image_fill_arrays(data, linesize, pkt->data, encctx->pix_fmt, encctx->width, encctx->height, 1);
 
     SDL_LockMutex(sdl->mutex);
     SDL_FillRect(sdl->surface, &sdl->surface->clip_rect,
                  SDL_MapRGB(sdl->surface->format, 0, 0, 0));
     SDL_LockYUVOverlay(sdl->overlay);
     for (i = 0; i < 3; i++) {
-        sdl->overlay->pixels [i] = pict.data    [i];
-        sdl->overlay->pitches[i] = pict.linesize[i];
+        sdl->overlay->pixels [i] = data    [i];
+        sdl->overlay->pitches[i] = linesize[i];
     }
     SDL_DisplayYUVOverlay(sdl->overlay, &sdl->overlay_rect);
     SDL_UnlockYUVOverlay(sdl->overlay);
@@ -354,6 +360,7 @@ static const AVClass sdl_class = {
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
+    .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT,
 };
 
 AVOutputFormat ff_sdl_muxer = {

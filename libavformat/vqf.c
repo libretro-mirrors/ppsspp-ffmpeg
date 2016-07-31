@@ -144,11 +144,7 @@ static int vqf_read_header(AVFormatContext *s)
             break;
         case MKTAG('D','S','I','Z'): // size of compressed data
         {
-            char buf[8] = {0};
-            int size = avio_rb32(s->pb);
-
-            snprintf(buf, sizeof(buf), "%d", size);
-            av_dict_set(&s->metadata, "size", buf, 0);
+            av_dict_set_int(&s->metadata, "size", avio_rb32(s->pb), 0);
         }
             break;
         case MKTAG('Y','E','A','R'): // recording date
@@ -166,7 +162,7 @@ static int vqf_read_header(AVFormatContext *s)
 
         header_size -= len;
 
-    } while (header_size >= 0 && !url_feof(s->pb));
+    } while (header_size >= 0 && !avio_feof(s->pb));
 
     switch (rate_flag) {
     case -1:
@@ -215,8 +211,8 @@ static int vqf_read_header(AVFormatContext *s)
         size = 2048;
         break;
     default:
-        av_log(s, AV_LOG_ERROR, "Mode not suported: %d Hz, %d kb/s.\n",
-               st->codec->sample_rate, st->codec->bit_rate);
+        av_log(s, AV_LOG_ERROR, "Mode not supported: %d Hz, %"PRId64" kb/s.\n",
+               st->codec->sample_rate, (int64_t)st->codec->bit_rate);
         return -1;
     }
     c->frame_bit_len = st->codec->bit_rate*size/st->codec->sample_rate;
@@ -250,7 +246,7 @@ static int vqf_read_packet(AVFormatContext *s, AVPacket *pkt)
     ret = avio_read(s->pb, pkt->data+2, size);
 
     if (ret != size) {
-        av_free_packet(pkt);
+        av_packet_unref(pkt);
         return AVERROR(EIO);
     }
 
@@ -265,7 +261,7 @@ static int vqf_read_seek(AVFormatContext *s,
 {
     VqfContext *c = s->priv_data;
     AVStream *st;
-    int ret;
+    int64_t ret;
     int64_t pos;
 
     st = s->streams[stream_index];
@@ -279,7 +275,7 @@ static int vqf_read_seek(AVFormatContext *s,
     st->cur_dts = av_rescale(pos, st->time_base.den,
                              st->codec->bit_rate * (int64_t)st->time_base.num);
 
-    if ((ret = avio_seek(s->pb, ((pos-7) >> 3) + s->data_offset, SEEK_SET)) < 0)
+    if ((ret = avio_seek(s->pb, ((pos-7) >> 3) + s->internal->data_offset, SEEK_SET)) < 0)
         return ret;
 
     c->remaining_bits = -7 - ((pos-7)&7);

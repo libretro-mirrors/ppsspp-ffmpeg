@@ -84,7 +84,7 @@ static int subviewer_read_header(AVFormatContext *s)
 
     av_bprint_init(&header, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    while (!url_feof(s->pb)) {
+    while (!avio_feof(s->pb)) {
         char line[2048];
         int64_t pos = 0;
         int len = ff_get_line(s->pb, line, sizeof(line));
@@ -153,7 +153,7 @@ static int subviewer_read_header(AVFormatContext *s)
         }
     }
 
-    ff_subtitles_queue_finalize(&subviewer->q);
+    ff_subtitles_queue_finalize(s, &subviewer->q);
 
 end:
     av_bprint_finalize(&header, NULL);

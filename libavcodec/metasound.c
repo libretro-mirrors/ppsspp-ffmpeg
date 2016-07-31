@@ -21,6 +21,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdint.h>
 
@@ -283,7 +284,7 @@ static av_cold int metasound_decode_init(AVCodecContext *avctx)
 
     for (;;) {
         if (!props->tag) {
-            av_log(avctx, AV_LOG_ERROR, "Could not find tag %08X\n", tag);
+            av_log(avctx, AV_LOG_ERROR, "Could not find tag %08"PRIX32"\n", tag);
             return AVERROR_INVALIDDATA;
         }
         if (props->tag == tag) {
@@ -382,7 +383,7 @@ AVCodec ff_metasound_decoder = {
     .init           = metasound_decode_init,
     .close          = ff_twinvq_decode_close,
     .decode         = ff_twinvq_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };

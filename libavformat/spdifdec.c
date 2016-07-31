@@ -176,7 +176,7 @@ int ff_spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     while (state != (AV_BSWAP16C(SYNCWORD1) << 16 | AV_BSWAP16C(SYNCWORD2))) {
         state = (state << 8) | avio_r8(pb);
-        if (url_feof(pb))
+        if (avio_feof(pb))
             return AVERROR_EOF;
     }
 
@@ -193,7 +193,7 @@ int ff_spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
     pkt->pos = avio_tell(pb) - BURST_HEADER_SIZE;
 
     if (avio_read(pb, pkt->data, pkt->size) < pkt->size) {
-        av_free_packet(pkt);
+        av_packet_unref(pkt);
         return AVERROR_EOF;
     }
     ff_spdif_bswap_buf16((uint16_t *)pkt->data, (uint16_t *)pkt->data, pkt->size >> 1);
@@ -201,7 +201,7 @@ int ff_spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
     ret = spdif_get_offset_and_codec(s, data_type, pkt->data,
                                      &offset, &codec_id);
     if (ret) {
-        av_free_packet(pkt);
+        av_packet_unref(pkt);
         return ret;
     }
 
@@ -212,7 +212,7 @@ int ff_spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
         /* first packet, create a stream */
         AVStream *st = avformat_new_stream(s, NULL);
         if (!st) {
-            av_free_packet(pkt);
+            av_packet_unref(pkt);
             return AVERROR(ENOMEM);
         }
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
