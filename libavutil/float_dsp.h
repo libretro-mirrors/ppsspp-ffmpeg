@@ -23,7 +23,7 @@
 
 typedef struct AVFloatDSPContext {
     /**
-     * Calculate the product of two vectors of floats and store the result in
+     * Calculate the entry wise product of two vectors of floats and store the result in
      * a vector of floats.
      *
      * @param dst  output vector
@@ -104,7 +104,7 @@ typedef struct AVFloatDSPContext {
                                const float *src1, const float *win, int len);
 
     /**
-     * Calculate the product of two vectors of floats, add a third vector of
+     * Calculate the entry wise product of two vectors of floats, add a third vector of
      * floats and store the result in a vector of floats.
      *
      * @param dst  output vector
@@ -113,7 +113,7 @@ typedef struct AVFloatDSPContext {
      *             constraints: 32-byte aligned
      * @param src1 second input vector
      *             constraints: 32-byte aligned
-     * @param src1 third input vector
+     * @param src2 third input vector
      *             constraints: 32-byte aligned
      * @param len  number of elements in the input
      *             constraints: multiple of 16
@@ -122,7 +122,7 @@ typedef struct AVFloatDSPContext {
                             const float *src2, int len);
 
     /**
-     * Calculate the product of two vectors of floats, and store the result
+     * Calculate the entry wise product of two vectors of floats, and store the result
      * in a vector of floats. The second vector of floats is iterated over
      * in reverse order.
      *
@@ -131,8 +131,6 @@ typedef struct AVFloatDSPContext {
      * @param src0 first input vector
      *             constraints: 32-byte aligned
      * @param src1 second input vector
-     *             constraints: 32-byte aligned
-     * @param src1 third input vector
      *             constraints: 32-byte aligned
      * @param len  number of elements in the input
      *             constraints: multiple of 16
@@ -172,18 +170,17 @@ typedef struct AVFloatDSPContext {
  */
 float avpriv_scalarproduct_float_c(const float *v1, const float *v2, int len);
 
-/**
- * Initialize a float DSP context.
- *
- * @param fdsp    float DSP context
- * @param strict  setting to non-zero avoids using functions which may not be IEEE-754 compliant
- */
-void avpriv_float_dsp_init(AVFloatDSPContext *fdsp, int strict);
-
-
+void ff_float_dsp_init_aarch64(AVFloatDSPContext *fdsp);
 void ff_float_dsp_init_arm(AVFloatDSPContext *fdsp);
 void ff_float_dsp_init_ppc(AVFloatDSPContext *fdsp, int strict);
 void ff_float_dsp_init_x86(AVFloatDSPContext *fdsp);
 void ff_float_dsp_init_mips(AVFloatDSPContext *fdsp);
+
+/**
+ * Allocate a float DSP context.
+ *
+ * @param strict  setting to non-zero avoids using functions which may not be IEEE-754 compliant
+ */
+AVFloatDSPContext *avpriv_float_dsp_alloc(int strict);
 
 #endif /* AVUTIL_FLOAT_DSP_H */

@@ -62,7 +62,7 @@ int ff_neterrno(void);
 #include <netdb.h>
 
 #define ff_neterrno() AVERROR(errno)
-#endif
+#endif /* HAVE_WINSOCK2_H */
 
 #if HAVE_ARPA_INET_H
 #include <arpa/inet.h>
@@ -78,7 +78,7 @@ extern int ff_network_inited_globally;
 int ff_network_init(void);
 void ff_network_close(void);
 
-void ff_tls_init(void);
+int ff_tls_init(void);
 void ff_tls_deinit(void);
 
 int ff_network_wait_fd(int fd, int write);
@@ -104,11 +104,23 @@ struct sockaddr_storage {
     uint8_t ss_family;
 #else
     uint16_t ss_family;
-#endif
+#endif /* HAVE_STRUCT_SOCKADDR_SA_LEN */
     char ss_pad1[6];
     int64_t ss_align;
     char ss_pad2[112];
 };
+#endif /* !HAVE_STRUCT_SOCKADDR_STORAGE */
+
+typedef union sockaddr_union {
+    struct sockaddr_storage storage;
+    struct sockaddr_in in;
+#if HAVE_STRUCT_SOCKADDR_IN6
+    struct sockaddr_in6 in6;
+#endif
+} sockaddr_union;
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
 #endif
 
 #if !HAVE_STRUCT_ADDRINFO
@@ -122,7 +134,7 @@ struct addrinfo {
     char *ai_canonname;
     struct addrinfo *ai_next;
 };
-#endif
+#endif /* !HAVE_STRUCT_ADDRINFO */
 
 /* getaddrinfo constants */
 #ifndef EAI_AGAIN
@@ -195,12 +207,13 @@ int ff_getnameinfo(const struct sockaddr *sa, int salen,
 #define getaddrinfo ff_getaddrinfo
 #define freeaddrinfo ff_freeaddrinfo
 #define getnameinfo ff_getnameinfo
-#endif
+#endif /* !HAVE_GETADDRINFO */
+
 #if !HAVE_GETADDRINFO || HAVE_WINSOCK2_H
 const char *ff_gai_strerror(int ecode);
 #undef gai_strerror
 #define gai_strerror ff_gai_strerror
-#endif
+#endif /* !HAVE_GETADDRINFO || HAVE_WINSOCK2_H */
 
 #ifndef INADDR_LOOPBACK
 #define INADDR_LOOPBACK 0x7f000001
@@ -240,6 +253,26 @@ int ff_is_multicast_address(struct sockaddr *addr);
 int ff_listen_bind(int fd, const struct sockaddr *addr,
                    socklen_t addrlen, int timeout,
                    URLContext *h);
+
+/**
+ * Bind to a file descriptor to an address without accepting connections.
+ * @param fd      First argument of bind().
+ * @param addr    Second argument of bind().
+ * @param addrlen Third argument of bind().
+ * @return        0 on success or an AVERROR on failure.
+ */
+int ff_listen(int fd, const struct sockaddr *addr, socklen_t addrlen);
+
+/**
+ * Poll for a single connection on the passed file descriptor.
+ * @param fd      The listening socket file descriptor.
+ * @param timeout Polling timeout in milliseconds.
+ * @param h       URLContext providing interrupt check
+ *                callback and logging context.
+ * @return        A non-blocking file descriptor on success
+ *                or an AVERROR on failure.
+ */
+int ff_accept(int fd, int timeout, URLContext *h);
 
 /**
  * Connect to a file descriptor and poll for result.

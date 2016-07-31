@@ -54,6 +54,7 @@ static av_cold int mxpeg_decode_end(AVCodecContext *avctx)
     for (i = 0; i < 2; ++i)
         av_frame_free(&s->picture[i]);
 
+    s->bitmask_size = 0;
     av_freep(&s->mxm_bitmask);
     av_freep(&s->completion_bitmask);
 
@@ -295,11 +296,11 @@ static int mxpeg_decode_frame(AVCodecContext *avctx,
                                              AV_GET_BUFFER_FLAG_REF)) < 0)
                         return ret;
 
-                    ret = ff_mjpeg_decode_sos(jpg, s->mxm_bitmask, reference_ptr);
+                    ret = ff_mjpeg_decode_sos(jpg, s->mxm_bitmask, s->bitmask_size, reference_ptr);
                     if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                         return ret;
                 } else {
-                    ret = ff_mjpeg_decode_sos(jpg, NULL, NULL);
+                    ret = ff_mjpeg_decode_sos(jpg, NULL, 0, NULL);
                     if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                         return ret;
                 }
@@ -342,6 +343,7 @@ AVCodec ff_mxpeg_decoder = {
     .init           = mxpeg_decode_init,
     .close          = mxpeg_decode_end,
     .decode         = mxpeg_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .max_lowres     = 3,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

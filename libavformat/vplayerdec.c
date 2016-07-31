@@ -65,7 +65,7 @@ static int vplayer_read_header(AVFormatContext *s)
     st->codec->codec_type = AVMEDIA_TYPE_SUBTITLE;
     st->codec->codec_id   = AV_CODEC_ID_VPLAYER;
 
-    while (!url_feof(s->pb)) {
+    while (!avio_feof(s->pb)) {
         char line[4096];
         char *p = line;
         const int64_t pos = avio_tell(s->pb);
@@ -90,7 +90,7 @@ static int vplayer_read_header(AVFormatContext *s)
         }
     }
 
-    ff_subtitles_queue_finalize(&vplayer->q);
+    ff_subtitles_queue_finalize(s, &vplayer->q);
     return 0;
 }
 

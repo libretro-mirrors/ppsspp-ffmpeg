@@ -60,7 +60,7 @@ enum preset {
 
 typedef struct {
     const AVClass *class;
-    enum preset preset;
+    int preset;
     char *comp_points_str[NB_COMP + 1];
     char *comp_points_str_all;
     uint8_t graph[NB_COMP + 1][256];
@@ -68,6 +68,10 @@ typedef struct {
     uint8_t rgba_map[4];
     int step;
 } CurvesContext;
+
+typedef struct ThreadData {
+    AVFrame *in, *out;
+} ThreadData;
 
 #define OFFSET(x) offsetof(CurvesContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
@@ -327,8 +331,10 @@ static int parse_psfile(AVFilterContext *ctx, const char *fname)
         return ret;
 
 #define READ16(dst) do {                \
-    if (size < 2)                       \
-        return AVERROR_INVALIDDATA;     \
+    if (size < 2) {                     \
+        ret = AVERROR_INVALIDDATA;      \
+        goto end;                       \
+    }                                   \
     dst = AV_RB16(buf);                 \
     buf  += 2;                          \
     size -= 2;                          \
@@ -458,8 +464,10 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_RGB0,   AV_PIX_FMT_BGR0,
         AV_PIX_FMT_NONE
     };
-    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
-    return 0;
+    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
+    if (!fmts_list)
+        return AVERROR(ENOMEM);
+    return ff_set_common_formats(ctx, fmts_list);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -473,23 +481,46 @@ static int config_input(AVFilterLink *inlink)
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFrame *in)
+static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
 {
-    int x, y, direct = 0;
-    AVFilterContext *ctx = inlink->dst;
-    CurvesContext *curves = ctx->priv;
-    AVFilterLink *outlink = ctx->outputs[0];
-    AVFrame *out;
-    uint8_t *dst;
-    const uint8_t *src;
+    int x, y;
+    const CurvesContext *curves = ctx->priv;
+    const ThreadData *td = arg;
+    const AVFrame *in  = td->in;
+    const AVFrame *out = td->out;
+    const int direct = out == in;
     const int step = curves->step;
     const uint8_t r = curves->rgba_map[R];
     const uint8_t g = curves->rgba_map[G];
     const uint8_t b = curves->rgba_map[B];
     const uint8_t a = curves->rgba_map[A];
+    const int slice_start = (in->height *  jobnr   ) / nb_jobs;
+    const int slice_end   = (in->height * (jobnr+1)) / nb_jobs;
+    uint8_t       *dst = out->data[0] + slice_start * out->linesize[0];
+    const uint8_t *src =  in->data[0] + slice_start *  in->linesize[0];
+
+    for (y = slice_start; y < slice_end; y++) {
+        for (x = 0; x < in->width * step; x += step) {
+            dst[x + r] = curves->graph[R][src[x + r]];
+            dst[x + g] = curves->graph[G][src[x + g]];
+            dst[x + b] = curves->graph[B][src[x + b]];
+            if (!direct && step == 4)
+                dst[x + a] = src[x + a];
+        }
+        dst += out->linesize[0];
+        src += in ->linesize[0];
+    }
+    return 0;
+}
+
+static int filter_frame(AVFilterLink *inlink, AVFrame *in)
+{
+    AVFilterContext *ctx = inlink->dst;
+    AVFilterLink *outlink = ctx->outputs[0];
+    AVFrame *out;
+    ThreadData td;
 
     if (av_frame_is_writable(in)) {
-        direct = 1;
         out = in;
     } else {
         out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
@@ -500,22 +531,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         av_frame_copy_props(out, in);
     }
 
-    dst = out->data[0];
-    src = in ->data[0];
+    td.in  = in;
+    td.out = out;
+    ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(outlink->h, ctx->graph->nb_threads));
 
-    for (y = 0; y < inlink->h; y++) {
-        for (x = 0; x < inlink->w * step; x += step) {
-            dst[x + r] = curves->graph[R][src[x + r]];
-            dst[x + g] = curves->graph[G][src[x + g]];
-            dst[x + b] = curves->graph[B][src[x + b]];
-            if (!direct && step == 4)
-                dst[x + a] = src[x + a];
-        }
-        dst += out->linesize[0];
-        src += in ->linesize[0];
-    }
-
-    if (!direct)
+    if (out != in)
         av_frame_free(&in);
 
     return ff_filter_frame(outlink, out);
@@ -548,5 +568,5 @@ AVFilter ff_vf_curves = {
     .inputs        = curves_inputs,
     .outputs       = curves_outputs,
     .priv_class    = &curves_class,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
 };

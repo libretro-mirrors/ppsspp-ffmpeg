@@ -17,7 +17,8 @@
 
 #///////////////////////////////////////////////////////////////////////////////
 
-rm config.mak
+set -e
+rm -f config.mak
 
 ARCH=x86_64
 
@@ -230,7 +231,7 @@ params_dump PARAMS
 
 
 echo "---- configure ----"
-./configure --extra-cflags="-MD -IWindowsInclude -GS-" $PARAMS
+./configure --extra-cflags="-MT -IWindowsInclude -GS-" $PARAMS
 
 echo "---- make clean ----"
 make clean

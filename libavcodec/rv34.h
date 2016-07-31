@@ -102,12 +102,14 @@ typedef struct RV34DecContext{
     int dmv[4][2];           ///< differential motion vectors for the current macroblock
 
     int rv30;                ///< indicates which RV variasnt is currently decoded
-    int rpr;                 ///< one field size in RV30 slice header
+    int max_rpr;
 
     int cur_pts, last_pts, next_pts;
     int scaled_weight;
     int weight1, weight2;    ///< B frame distance fractions (0.14) used in motion compensation
     int mv_weight1, mv_weight2;
+
+    int orig_width, orig_height;
 
     uint16_t *cbp_luma;      ///< CBP values for luma subblocks
     uint8_t  *cbp_chroma;    ///< CBP values for chroma subblocks

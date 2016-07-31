@@ -20,6 +20,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
+
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "bytestream.h"
@@ -75,11 +77,15 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     ncolors       = bytestream2_get_be32u(&gb);
     bytestream2_skipu(&gb, header_size - (XWD_HEADER_SIZE - 20));
 
-    av_log(avctx, AV_LOG_DEBUG, "pixformat %d, pixdepth %d, bunit %d, bitorder %d, bpad %d\n",
+    av_log(avctx, AV_LOG_DEBUG,
+           "pixformat %"PRIu32", pixdepth %"PRIu32", bunit %"PRIu32", bitorder %"PRIu32", bpad %"PRIu32"\n",
            pixformat, pixdepth, bunit, bitorder, bpad);
-    av_log(avctx, AV_LOG_DEBUG, "vclass %d, ncolors %d, bpp %d, be %d, lsize %d, xoffset %d\n",
+    av_log(avctx, AV_LOG_DEBUG,
+           "vclass %"PRIu32", ncolors %"PRIu32", bpp %"PRIu32", be %"PRIu32", lsize %"PRIu32", xoffset %"PRIu32"\n",
            vclass, ncolors, bpp, be, lsize, xoffset);
-    av_log(avctx, AV_LOG_DEBUG, "red %0x, green %0x, blue %0x\n", rgb[0], rgb[1], rgb[2]);
+    av_log(avctx, AV_LOG_DEBUG,
+           "red %0"PRIx32", green %0"PRIx32", blue %0"PRIx32"\n",
+           rgb[0], rgb[1], rgb[2]);
 
     if (pixformat > XWD_Z_PIXMAP) {
         av_log(avctx, AV_LOG_ERROR, "invalid pixmap format\n");
@@ -92,7 +98,7 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (xoffset) {
-        avpriv_request_sample(avctx, "xoffset %d", xoffset);
+        avpriv_request_sample(avctx, "xoffset %"PRIu32"", xoffset);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -135,13 +141,13 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     }
 
-    if (bytestream2_get_bytes_left(&gb) < ncolors * XWD_CMAP_SIZE + avctx->height * lsize) {
+    if (bytestream2_get_bytes_left(&gb) < ncolors * XWD_CMAP_SIZE + (uint64_t)avctx->height * lsize) {
         av_log(avctx, AV_LOG_ERROR, "input buffer too small\n");
         return AVERROR_INVALIDDATA;
     }
 
     if (pixformat != XWD_Z_PIXMAP) {
-        avpriv_report_missing_feature(avctx, "Pixmap format %d", pixformat);
+        avpriv_report_missing_feature(avctx, "Pixmap format %"PRIu32, pixformat);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -196,7 +202,7 @@ static int xwd_decode_frame(AVCodecContext *avctx, void *data,
 
     if (avctx->pix_fmt == AV_PIX_FMT_NONE) {
         avpriv_request_sample(avctx,
-                              "Unknown file: bpp %d, pixdepth %d, vclass %d",
+                              "Unknown file: bpp %"PRIu32", pixdepth %"PRIu32", vclass %"PRIu32"",
                               bpp, pixdepth, vclass);
         return AVERROR_PATCHWELCOME;
     }
@@ -243,5 +249,5 @@ AVCodec ff_xwd_decoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_XWD,
     .decode         = xwd_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

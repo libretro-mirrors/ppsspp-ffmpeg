@@ -25,13 +25,15 @@
 
 #include "libavutil/bswap.h"
 #include "libavutil/common.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/lzo.h"
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
+#include "idctdsp.h"
 #include "internal.h"
 #include "rtjpeg.h"
 
-typedef struct {
+typedef struct NuvContext {
     AVFrame *pic;
     int codec_frameheader;
     int quality;
@@ -40,7 +42,6 @@ typedef struct {
     unsigned char *decomp_buf;
     uint32_t lq[64], cq[64];
     RTJpegContext rtj;
-    DSPContext dsp;
 } NuvContext;
 
 static const uint8_t fallback_lquant[] = {
@@ -74,9 +75,12 @@ static const uint8_t fallback_cquant[] = {
  */
 static void copy_frame(AVFrame *f, const uint8_t *src, int width, int height)
 {
-    AVPicture pic;
-    avpicture_fill(&pic, src, AV_PIX_FMT_YUV420P, width, height);
-    av_picture_copy((AVPicture *)f, &pic, AV_PIX_FMT_YUV420P, width, height);
+    uint8_t *src_data[4];
+    int src_linesize[4];
+    av_image_fill_arrays(src_data, src_linesize, src,
+                         f->format, width, height, 1);
+    av_image_copy(f->data, f->linesize, (const uint8_t **)src_data, src_linesize,
+                  f->format, width, height);
 }
 
 /**
@@ -123,7 +127,7 @@ static int codec_reinit(AVCodecContext *avctx, int width, int height,
     if (width != c->width || height != c->height) {
         // also reserve space for a possible additional header
         int buf_size = height * width * 3 / 2
-                     + FFMAX(AV_LZO_OUTPUT_PADDING, FF_INPUT_BUFFER_PADDING_SIZE)
+                     + FFMAX(AV_LZO_OUTPUT_PADDING, AV_INPUT_BUFFER_PADDING_SIZE)
                      + RTJPEG_HEADER_SIZE;
         if (buf_size > INT_MAX/8)
             return -1;
@@ -138,13 +142,11 @@ static int codec_reinit(AVCodecContext *avctx, int width, int height,
                    "Can't allocate decompression buffer.\n");
             return AVERROR(ENOMEM);
         }
-        ff_rtjpeg_decode_init(&c->rtj, &c->dsp, c->width, c->height,
-                              c->lq, c->cq);
+        ff_rtjpeg_decode_init(&c->rtj, c->width, c->height, c->lq, c->cq);
         av_frame_unref(c->pic);
         return 1;
     } else if (quality != c->quality)
-        ff_rtjpeg_decode_init(&c->rtj, &c->dsp, c->width, c->height,
-                              c->lq, c->cq);
+        ff_rtjpeg_decode_init(&c->rtj, c->width, c->height, c->lq, c->cq);
 
     return 0;
 }
@@ -183,8 +185,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         ret       = get_quant(avctx, c, buf, buf_size);
         if (ret < 0)
             return ret;
-        ff_rtjpeg_decode_init(&c->rtj, &c->dsp, c->width, c->height, c->lq,
-                              c->cq);
+        ff_rtjpeg_decode_init(&c->rtj, c->width, c->height, c->lq, c->cq);
         return orig_size;
     }
 
@@ -210,15 +211,15 @@ retry:
     buf       = &buf[12];
     buf_size -= 12;
     if (comptype == NUV_RTJPEG_IN_LZO || comptype == NUV_LZO) {
-        int outlen = c->decomp_size - FFMAX(FF_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING);
+        int outlen = c->decomp_size - FFMAX(AV_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING);
         int inlen  = buf_size;
         if (av_lzo1x_decode(c->decomp_buf, &outlen, buf, &inlen)) {
             av_log(avctx, AV_LOG_ERROR, "error during lzo decompression\n");
             return AVERROR_INVALIDDATA;
         }
         buf      = c->decomp_buf;
-        buf_size = c->decomp_size - FFMAX(FF_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING) - outlen;
-        memset(c->decomp_buf + buf_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+        buf_size = c->decomp_size - FFMAX(AV_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING) - outlen;
+        memset(c->decomp_buf + buf_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     }
     if (c->codec_frameheader) {
         int w, h, q;
@@ -322,7 +323,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (avctx->extradata_size)
         get_quant(avctx, c, avctx->extradata, avctx->extradata_size);
 
-    ff_dsputil_init(&c->dsp, avctx);
+    ff_rtjpeg_init(&c->rtj, avctx);
 
     if ((ret = codec_reinit(avctx, avctx->width, avctx->height, -1)) < 0)
         return ret;
@@ -349,5 +350,5 @@ AVCodec ff_nuv_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

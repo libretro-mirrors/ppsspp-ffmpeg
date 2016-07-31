@@ -25,7 +25,7 @@
 
 #include "libavutil/log.h"
 
-extern const AVClass ffio_url_class;
+extern const AVClass ff_avio_class;
 
 int ffio_init_context(AVIOContext *s,
                   unsigned char *buffer,
@@ -85,6 +85,13 @@ int ffio_rewind_with_probe_data(AVIOContext *s, unsigned char **buf, int buf_siz
 
 uint64_t ffio_read_varlen(AVIOContext *bc);
 
+/**
+ * Read size bytes from AVIOContext into buf.
+ * Check that exactly size bytes have been read.
+ * @return number of bytes read or AVERROR
+ */
+int ffio_read_size(AVIOContext *s, unsigned char *buf, int size);
+
 /** @warning must be called before any I/O */
 int ffio_set_buf_size(AVIOContext *s, int buf_size);
 
@@ -93,9 +100,9 @@ int ffio_set_buf_size(AVIOContext *s, int buf_size);
  *
  * Will ensure that when reading sequentially up to buf_size, seeking
  * within the current pos and pos+buf_size is possible.
- * Once the stream position moves outside this window this gurantee is lost.
+ * Once the stream position moves outside this window this guarantee is lost.
  */
-int ffio_ensure_seekback(AVIOContext *s, int buf_size);
+int ffio_ensure_seekback(AVIOContext *s, int64_t buf_size);
 
 int ffio_limit(AVIOContext *s, int size);
 
@@ -105,6 +112,8 @@ void ffio_init_checksum(AVIOContext *s,
 unsigned long ffio_get_checksum(AVIOContext *s);
 unsigned long ff_crc04C11DB7_update(unsigned long checksum, const uint8_t *buf,
                                     unsigned int len);
+unsigned long ff_crcA001_update(unsigned long checksum, const uint8_t *buf,
+                                unsigned int len);
 
 /**
  * Open a write only packetized memory stream with a maximum packet
@@ -140,6 +149,10 @@ int ffio_fdopen(AVIOContext **s, URLContext *h);
  */
 int ffio_open_null_buf(AVIOContext **s);
 
+int ffio_open_whitelist(AVIOContext **s, const char *url, int flags,
+                         const AVIOInterruptCB *int_cb, AVDictionary **options,
+                         const char *whitelist);
+
 /**
  * Close a null buffer.
  *
@@ -147,5 +160,12 @@ int ffio_open_null_buf(AVIOContext **s);
  * @return the number of bytes written to the null buffer
  */
 int ffio_close_null_buf(AVIOContext *s);
+
+/**
+ * Free a dynamic buffer.
+ *
+ * @param s a pointer to an IO context opened by avio_open_dyn_buf()
+ */
+void ffio_free_dyn_buf(AVIOContext **s);
 
 #endif /* AVFORMAT_AVIO_INTERNAL_H */

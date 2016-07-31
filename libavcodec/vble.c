@@ -26,15 +26,17 @@
 
 #define BITSTREAM_READER_LE
 
+#include "libavutil/imgutils.h"
+
 #include "avcodec.h"
-#include "dsputil.h"
 #include "get_bits.h"
+#include "huffyuvdsp.h"
 #include "internal.h"
 #include "mathops.h"
 
-typedef struct {
+typedef struct VBLEContext {
     AVCodecContext *avctx;
-    DSPContext dsp;
+    HuffYUVDSPContext hdsp;
 
     int            size;
     uint8_t        *val; ///< This array first holds the lengths of vlc symbols and then their value.
@@ -100,7 +102,8 @@ static void vble_restore_plane(VBLEContext *ctx, AVFrame *pic,
         if (i) {
             left = 0;
             left_top = dst[-stride];
-            ctx->dsp.add_hfyu_median_prediction(dst, dst-stride, val, width, &left, &left_top);
+            ctx->hdsp.add_hfyu_median_pred(dst, dst - stride, val,
+                                           width, &left, &left_top);
         } else {
             dst[0] = val[0];
             for (j = 1; j < width; j++)
@@ -154,7 +157,7 @@ static int vble_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     vble_restore_plane(ctx, pic, &gb, 0, offset, avctx->width, avctx->height);
 
     /* Chroma */
-    if (!(ctx->avctx->flags & CODEC_FLAG_GRAY)) {
+    if (!(ctx->avctx->flags & AV_CODEC_FLAG_GRAY)) {
         offset += avctx->width * avctx->height;
         vble_restore_plane(ctx, pic, &gb, 1, offset, width_uv, height_uv);
 
@@ -181,15 +184,15 @@ static av_cold int vble_decode_init(AVCodecContext *avctx)
 
     /* Stash for later use */
     ctx->avctx = avctx;
-    ff_dsputil_init(&ctx->dsp, avctx);
+    ff_huffyuvdsp_init(&ctx->hdsp);
 
     avctx->pix_fmt = AV_PIX_FMT_YUV420P;
     avctx->bits_per_raw_sample = 8;
 
-    ctx->size = avpicture_get_size(avctx->pix_fmt,
-                                   avctx->width, avctx->height);
+    ctx->size = av_image_get_buffer_size(avctx->pix_fmt,
+                                         avctx->width, avctx->height, 1);
 
-    ctx->val = av_malloc(ctx->size * sizeof(*ctx->val));
+    ctx->val = av_malloc_array(ctx->size, sizeof(*ctx->val));
 
     if (!ctx->val) {
         av_log(avctx, AV_LOG_ERROR, "Could not allocate values buffer.\n");
@@ -209,5 +212,5 @@ AVCodec ff_vble_decoder = {
     .init           = vble_decode_init,
     .close          = vble_decode_close,
     .decode         = vble_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

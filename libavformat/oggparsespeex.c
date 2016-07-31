@@ -47,6 +47,8 @@ static int speex_header(AVFormatContext *s, int idx) {
 
     if (!spxp) {
         spxp = av_mallocz(sizeof(*spxp));
+        if (!spxp)
+            return AVERROR(ENOMEM);
         os->private = spxp;
     }
 
@@ -83,7 +85,7 @@ static int speex_header(AVFormatContext *s, int idx) {
 
         avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
     } else
-        ff_vorbis_comment(s, &st->metadata, p, os->psize);
+        ff_vorbis_stream_comment(s, st, p, os->psize);
 
     spxp->seq++;
     return 1;

@@ -20,15 +20,18 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
+
 #include "libavutil/intreadwrite.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
+#include "canopus.h"
 #include "get_bits.h"
 #include "avcodec.h"
 #include "internal.h"
 
 typedef struct CLLCContext {
-    DSPContext dsp;
     AVCodecContext *avctx;
+    BswapDSPContext bdsp;
 
     uint8_t *swapped_buf;
     int      swapped_buf_size;
@@ -360,22 +363,25 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     GetBitContext gb;
     int coding_type, ret;
 
-    /* Skip the INFO header if present */
+    if (avpkt->size < 4 + 4) {
+        av_log(avctx, AV_LOG_ERROR, "Frame is too small %d.\n", avpkt->size);
+        return AVERROR_INVALIDDATA;
+    }
+
     info_offset = 0;
     info_tag    = AV_RL32(src);
     if (info_tag == MKTAG('I', 'N', 'F', 'O')) {
         info_offset = AV_RL32(src + 4);
         if (info_offset > UINT32_MAX - 8 || info_offset + 8 > avpkt->size) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Invalid INFO header offset: 0x%08X is too large.\n",
+                   "Invalid INFO header offset: 0x%08"PRIX32" is too large.\n",
                    info_offset);
             return AVERROR_INVALIDDATA;
         }
+        ff_canopus_parse_info_tag(avctx, src + 8, info_offset);
 
         info_offset += 8;
         src         += info_offset;
-
-        av_log(avctx, AV_LOG_DEBUG, "Skipping INFO chunk.\n");
     }
 
     data_size = (avpkt->size - info_offset) & ~1;
@@ -389,10 +395,11 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     /* bswap16 the buffer since CLLC's bitreader works in 16-bit words */
-    ctx->dsp.bswap16_buf((uint16_t *) ctx->swapped_buf, (uint16_t *) src,
-                         data_size / 2);
+    ctx->bdsp.bswap16_buf((uint16_t *) ctx->swapped_buf, (uint16_t *) src,
+                          data_size / 2);
 
-    init_get_bits(&gb, ctx->swapped_buf, data_size * 8);
+    if ((ret = init_get_bits8(&gb, ctx->swapped_buf, data_size)) < 0)
+        return ret;
 
     /*
      * Read in coding type. The types are as follows:
@@ -474,7 +481,7 @@ static av_cold int cllc_decode_init(AVCodecContext *avctx)
     ctx->swapped_buf      = NULL;
     ctx->swapped_buf_size = 0;
 
-    ff_dsputil_init(&ctx->dsp, avctx);
+    ff_bswapdsp_init(&ctx->bdsp);
 
     return 0;
 }
@@ -488,5 +495,5 @@ AVCodec ff_cllc_decoder = {
     .init           = cllc_decode_init,
     .decode         = cllc_decode_frame,
     .close          = cllc_decode_close,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

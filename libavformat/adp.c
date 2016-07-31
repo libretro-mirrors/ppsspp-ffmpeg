@@ -71,14 +71,14 @@ static int adp_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     int ret, size = 1024;
 
-    if (url_feof(s->pb))
+    if (avio_feof(s->pb))
         return AVERROR_EOF;
 
     ret = av_get_packet(s->pb, pkt, size);
 
     if (ret != size) {
         if (ret < 0) {
-            av_free_packet(pkt);
+            av_packet_unref(pkt);
             return ret;
         }
         av_shrink_packet(pkt, ret);

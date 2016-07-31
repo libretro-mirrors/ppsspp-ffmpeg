@@ -1,6 +1,6 @@
 /*
  * Microsoft Video-1 Decoder
- * Copyright (C) 2003 the ffmpeg project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -67,6 +67,8 @@ static av_cold int msvideo1_decode_init(AVCodecContext *avctx)
     if (s->avctx->bits_per_coded_sample == 8) {
         s->mode_8bit = 1;
         avctx->pix_fmt = AV_PIX_FMT_PAL8;
+        if (avctx->extradata_size >= AVPALETTE_SIZE)
+            memcpy(s->pal, avctx->extradata, AVPALETTE_SIZE);
     } else {
         s->mode_8bit = 0;
         avctx->pix_fmt = AV_PIX_FMT_RGB555;
@@ -344,5 +346,5 @@ AVCodec ff_msvideo1_decoder = {
     .init           = msvideo1_decode_init,
     .close          = msvideo1_decode_end,
     .decode         = msvideo1_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

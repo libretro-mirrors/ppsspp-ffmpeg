@@ -29,7 +29,8 @@
 
 #include "libavutil/common.h"
 #include "avcodec.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
+#include "huffyuvencdsp.h"
 
 enum {
     PRED_NONE = 0,
@@ -64,8 +65,10 @@ extern const int ff_ut_pred_order[5];
 extern const int ff_ut_rgb_order[4];
 
 typedef struct UtvideoContext {
+    const AVClass *class;
     AVCodecContext *avctx;
-    DSPContext     dsp;
+    BswapDSPContext bdsp;
+    HuffYUVEncDSPContext hdsp;
 
     uint32_t frame_info_size, flags, frame_info;
     int      planes;

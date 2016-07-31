@@ -30,8 +30,10 @@ typedef struct H264ChromaContext {
 
 void ff_h264chroma_init(H264ChromaContext *c, int bit_depth);
 
+void ff_h264chroma_init_aarch64(H264ChromaContext *c, int bit_depth);
 void ff_h264chroma_init_arm(H264ChromaContext *c, int bit_depth);
 void ff_h264chroma_init_ppc(H264ChromaContext *c, int bit_depth);
 void ff_h264chroma_init_x86(H264ChromaContext *c, int bit_depth);
+void ff_h264chroma_init_mips(H264ChromaContext *c, int bit_depth);
 
 #endif /* AVCODEC_H264CHROMA_H */

@@ -83,7 +83,7 @@ static int mpl2_read_header(AVFormatContext *s)
     st->codec->codec_type = AVMEDIA_TYPE_SUBTITLE;
     st->codec->codec_id   = AV_CODEC_ID_MPL2;
 
-    while (!url_feof(s->pb)) {
+    while (!avio_feof(s->pb)) {
         char line[4096];
         char *p = line;
         const int64_t pos = avio_tell(s->pb);
@@ -108,7 +108,7 @@ static int mpl2_read_header(AVFormatContext *s)
         }
     }
 
-    ff_subtitles_queue_finalize(&mpl2->q);
+    ff_subtitles_queue_finalize(s, &mpl2->q);
     return res;
 }
 

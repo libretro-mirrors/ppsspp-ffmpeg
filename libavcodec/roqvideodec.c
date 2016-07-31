@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003 the ffmpeg project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -26,6 +26,8 @@
  */
 
 #include "libavutil/avassert.h"
+#include "libavutil/imgutils.h"
+
 #include "avcodec.h"
 #include "bytestream.h"
 #include "internal.h"
@@ -79,7 +81,7 @@ static void roqvideo_decode_frame(RoqContext *ri)
         for (yp = ypos; yp < ypos + 16; yp += 8)
             for (xp = xpos; xp < xpos + 16; xp += 8) {
                 if (bytestream2_tell(&ri->gb) >= chunk_start + chunk_size) {
-                    av_log(ri->avctx, AV_LOG_ERROR, "Input buffer too small\n");
+                    av_log(ri->avctx, AV_LOG_VERBOSE, "Chunk is too short\n");
                     return;
                 }
                 if (vqflg_pos < 0) {
@@ -114,7 +116,7 @@ static void roqvideo_decode_frame(RoqContext *ri)
                         if(k & 0x02) y += 4;
 
                         if (bytestream2_tell(&ri->gb) >= chunk_start + chunk_size) {
-                            av_log(ri->avctx, AV_LOG_ERROR, "Input buffer too small\n");
+                            av_log(ri->avctx, AV_LOG_VERBOSE, "Chunk is too short\n");
                             return;
                         }
                         if (vqflg_pos < 0) {
@@ -189,7 +191,8 @@ static av_cold int roq_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
-    avctx->pix_fmt = AV_PIX_FMT_YUV444P;
+    avctx->pix_fmt = AV_PIX_FMT_YUVJ444P;
+    avctx->color_range = AVCOL_RANGE_JPEG;
 
     return 0;
 }
@@ -201,15 +204,17 @@ static int roq_decode_frame(AVCodecContext *avctx,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     RoqContext *s = avctx->priv_data;
-    int copy= !s->current_frame->data[0];
+    int copy = !s->current_frame->data[0] && s->last_frame->data[0];
     int ret;
 
     if ((ret = ff_reget_buffer(avctx, s->current_frame)) < 0)
         return ret;
 
-    if(copy)
-        av_picture_copy((AVPicture*)s->current_frame, (AVPicture*)s->last_frame,
-                        avctx->pix_fmt, avctx->width, avctx->height);
+    if (copy) {
+        ret = av_frame_copy(s->current_frame, s->last_frame);
+        if (ret < 0)
+            return ret;
+    }
 
     bytestream2_init(&s->gb, buf, buf_size);
     roqvideo_decode_frame(s);
@@ -243,5 +248,5 @@ AVCodec ff_roq_decoder = {
     .init           = roq_decode_init,
     .close          = roq_decode_end,
     .decode         = roq_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

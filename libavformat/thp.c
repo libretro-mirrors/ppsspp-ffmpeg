@@ -98,7 +98,7 @@ static int thp_read_header(AVFormatContext *s)
 
     for (i = 0; i < thp->compcount; i++) {
         if (thp->components[i] == 0) {
-            if (thp->vst != 0)
+            if (thp->vst)
                 break;
 
             /* Video component.  */
@@ -135,6 +135,7 @@ static int thp_read_header(AVFormatContext *s)
             st->codec->codec_tag = 0;  /* no fourcc */
             st->codec->channels    = avio_rb32(pb); /* numChannels.  */
             st->codec->sample_rate = avio_rb32(pb); /* Frequency.  */
+            st->duration           = avio_rb32(pb);
 
             avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
 
@@ -176,16 +177,20 @@ static int thp_read_packet(AVFormatContext *s,
             thp->frame++;
 
         ret = av_get_packet(pb, pkt, size);
+        if (ret < 0)
+            return ret;
         if (ret != size) {
-            av_free_packet(pkt);
+            av_packet_unref(pkt);
             return AVERROR(EIO);
         }
 
         pkt->stream_index = thp->video_stream_index;
     } else {
         ret = av_get_packet(pb, pkt, thp->audiosize);
+        if (ret < 0)
+            return ret;
         if (ret != thp->audiosize) {
-            av_free_packet(pkt);
+            av_packet_unref(pkt);
             return AVERROR(EIO);
         }
 

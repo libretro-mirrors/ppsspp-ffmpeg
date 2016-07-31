@@ -22,6 +22,7 @@
 * @todo better probing than extensions matching
 */
 
+#define MODPLUG_STATIC
 #include <libmodplug/modplug.h>
 #include "libavutil/avstring.h"
 #include "libavutil/eval.h"
@@ -59,7 +60,7 @@ typedef struct ModPlugContext {
     AVExpr *expr;         ///< parsed color eval expression
 } ModPlugContext;
 
-static const char *var_names[] = {
+static const char * const var_names[] = {
     "x", "y",
     "w", "h",
     "t",
@@ -324,7 +325,7 @@ static int modplug_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->size = ModPlug_Read(modplug->f, pkt->data, AUDIO_PKT_SIZE);
     if (pkt->size <= 0) {
-        av_free_packet(pkt);
+        av_packet_unref(pkt);
         return pkt->size == 0 ? AVERROR_EOF : AVERROR(EIO);
     }
     return 0;

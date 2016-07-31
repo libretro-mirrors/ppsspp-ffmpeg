@@ -35,7 +35,7 @@
 #include "get_bits.h"
 #include "huffman.h"
 #include "bytestream.h"
-#include "dsputil.h"
+#include "bswapdsp.h"
 #include "internal.h"
 #include "thread.h"
 
@@ -47,9 +47,9 @@
  */
 typedef struct FrapsContext {
     AVCodecContext *avctx;
+    BswapDSPContext bdsp;
     uint8_t *tmpbuf;
     int tmpbuf_size;
-    DSPContext dsp;
 } FrapsContext;
 
 
@@ -65,7 +65,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->avctx  = avctx;
     s->tmpbuf = NULL;
 
-    ff_dsputil_init(&s->dsp, avctx);
+    ff_bswapdsp_init(&s->bdsp);
 
     return 0;
 }
@@ -102,9 +102,12 @@ static int fraps2_decode_plane(FrapsContext *s, uint8_t *dst, int stride, int w,
     /* we have built Huffman table and are ready to decode plane */
 
     /* convert bits so they may be used by standard bitreader */
-    s->dsp.bswap_buf((uint32_t *)s->tmpbuf, (const uint32_t *)src, size >> 2);
+    s->bdsp.bswap_buf((uint32_t *) s->tmpbuf,
+                      (const uint32_t *) src, size >> 2);
 
-    init_get_bits(&gb, s->tmpbuf, size * 8);
+    if ((ret = init_get_bits8(&gb, s->tmpbuf, size)) < 0)
+        return ret;
+
     for (j = 0; j < h; j++) {
         for (i = 0; i < w*step; i += step) {
             dst[i] = get_vlc2(&gb, vlc.table, VLC_BITS, 3);
@@ -185,13 +188,13 @@ static int decode_frame(AVCodecContext *avctx,
             return buf_size;
         }
         if (AV_RL32(buf) != FPS_TAG || buf_size < planes*1024 + 24) {
-            av_log(avctx, AV_LOG_ERROR, "Fraps: error in data stream\n");
+            av_log(avctx, AV_LOG_ERROR, "error in data stream\n");
             return AVERROR_INVALIDDATA;
         }
         for (i = 0; i < planes; i++) {
             offs[i] = AV_RL32(buf + 4 + i * 4);
             if (offs[i] >= buf_size - header_size || (i && offs[i] <= offs[i - 1] + 1024)) {
-                av_log(avctx, AV_LOG_ERROR, "Fraps: plane %i offset is out of bounds\n", i);
+                av_log(avctx, AV_LOG_ERROR, "plane %i offset is out of bounds\n", i);
                 return AVERROR_INVALIDDATA;
             }
         }
@@ -207,7 +210,8 @@ static int decode_frame(AVCodecContext *avctx,
     f->key_frame = 1;
 
     avctx->pix_fmt = version & 1 ? AV_PIX_FMT_BGR24 : AV_PIX_FMT_YUVJ420P;
-    avctx->color_range = version & 1 ? AVCOL_RANGE_UNSPECIFIED : AVCOL_RANGE_JPEG;
+    avctx->color_range = version & 1 ? AVCOL_RANGE_UNSPECIFIED
+                                     : AVCOL_RANGE_JPEG;
     avctx->colorspace = version & 1 ? AVCOL_SPC_UNSPECIFIED : AVCOL_SPC_BT709;
 
     if ((ret = ff_thread_get_buffer(avctx, &frame, 0)) < 0)
@@ -320,5 +324,5 @@ AVCodec ff_fraps_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
 };
